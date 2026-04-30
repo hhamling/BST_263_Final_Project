@@ -1,0 +1,45 @@
+---
+title: "263 Project"
+author: "Hannah Hamling"
+date: "2026-04-30"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Read in data/variable selection
+```{r, message = FALSE}
+library(readxl)
+library(dplyr)
+fetal.dat <- read_excel("../Data/raw.fetal.data.xlsx")
+fetal.dat <- fetal.dat[-1,] #empty first row
+#each row is its own id
+#variables we'll actually use (including NSP)
+#removing date, id, filename, FEB, b, e, AC, DR, SUSP, class, and other classification variables not in our list
+fetal <- fetal.dat |> 
+  dplyr::select(-c("FileName","Date","SegFile","b", "e", "LBE", "AC", "DR", "A", 
+                   "B", "C", "D", "E", "AD","DE","LD","FS","SUSP","CLASS"))
+#make NSP a factor (only categorical variable in our selected features)
+fetal$NSP <- factor(fetal$NSP)
+
+dim(fetal) #2129 rows (people), 20 features, 1 outcome variable (NSP)
+#2 rows missing data on every variable: can remove
+#last row missing some variables, doesn't have a classification label
+fetal <- fetal[-c(2127,2128),]
+dim(fetal) #2127 people, 20 features, 1 outcome variable
+fetal[!complete.cases(fetal), ] #only this one row missing data
+```
+
+## Look at class frequencies (for later class minority adjustment)
+```{r}
+summary(fetal$NSP)
+#1655 are normal, 295 are suspect, 176 are pathologic, 1 missing
+```
+
+
+
+
+
+
