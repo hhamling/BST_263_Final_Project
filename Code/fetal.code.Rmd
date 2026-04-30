@@ -36,6 +36,7 @@ fetal[!complete.cases(fetal), ] #only this one row missing data
 ```{r}
 summary(fetal$NSP)
 #1655 are normal, 295 are suspect, 176 are pathologic, 1 missing
+plot(fetal$NSP)
 ```
 
 
