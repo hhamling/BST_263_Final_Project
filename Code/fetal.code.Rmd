@@ -7,6 +7,7 @@ output: pdf_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
 ```
 
 ## Read in data/variable selection
@@ -30,17 +31,129 @@ dim(fetal) #2129 rows (people), 20 features, 1 outcome variable (NSP)
 fetal <- fetal[-c(2127,2128),]
 dim(fetal) #2127 people, 20 features, 1 outcome variable
 fetal[!complete.cases(fetal), ] #only this one row missing data
+
+
 ```
 
 ## Look at class frequencies (for later class minority adjustment)
 ```{r}
 summary(fetal$NSP)
 #1655 are normal, 295 are suspect, 176 are pathologic, 1 missing
+#plot(fetal$NSP)
+
+# drop the 1 observation with NA for NSP -> 2126 observations 
+fetal <- fetal |> drop_na(NSP) 
+
+#1655 are normal, 295 are suspect, 176 are pathologic
 plot(fetal$NSP)
 ```
 
+```{r}
+library(caret)
+set.seed(263)
+
+train_indices <- createDataPartition(fetal$NSP, p = 0.8, list = FALSE)
+
+fetal_train <- fetal[train_indices, ]
+fetal_test  <- fetal[-train_indices, ]
+
+# make sure there are some of each NSP in both train and test data 
+table(fetal_train$NSP)
+table(fetal_test$NSP)
+```
+
+# Basic Tree Using All Variables
+
+```{r}
+library(rpart)
+library(rpart.plot) 
+
+basic_tree <- rpart(NSP ~ . , data = fetal_train, method = "class")
+
+rpart.plot(basic_tree)
+
+# training confusion matrix
+basic_tree_train_prediction <- predict(basic_tree, fetal_train, type = "class")
+confusionMatrix(basic_tree_train_prediction, fetal_train$NSP) # 93.36 train acc
 
 
+# test confusion matrix 
+basic_tree_test_prediction <- predict(basic_tree, fetal_test, type = "class")
+confusionMatrix(basic_tree_test_prediction, fetal_test$NSP) # 92.47 test acc
+
+# model predicts a lot of 2's as 1's, so we should punish this more 
+```
+
+## Basic Tree with Harsh Punishment for Common Mixup 
+```{r}
+# punish the common mistake of classifying a 2 as a 1
+
+# row is true class, column is predicted class
+# harsh punishment for misclassifying 1 as 2 (# can do like cv or something for this value)
+punishment <- 2
+loss_matrix_2misclassified1 <- matrix(c(
+  0,  1,  1,  
+  punishment,  0,  1,  # harsh punishment for misclassifying 2 as 1
+  1,  1,  0 ), nrow = 3, byrow = TRUE)
+rownames(loss_matrix_2misclassified1) <- c("class1", "class2", "class3")
+colnames(loss_matrix_2misclassified1) <- c("class1", "class2", "class3")
+
+# control the tree by requiring at least 5% of the training data in each node
+basic_tree_punish_2misclass1 <- rpart(NSP ~ . , data = fetal_train, method = "class",
+                               parms = list(loss = loss_matrix_2misclassified1))
+rpart.plot(basic_tree_punish_2misclass1)
+
+# training confusion matrix
+basic_tree_punish_2misclass1_train_prediction <- predict(basic_tree_punish_2misclass1, fetal_train, type = "class")
+confusionMatrix(basic_tree_punish_2misclass1_train_prediction, fetal_train$NSP) # train acc = .9406
+
+# test confusion matrix 
+basic_tree_punish_2misclass1_test_prediction <- predict(basic_tree_punish_2misclass1, fetal_test, type = "class")
+confusionMatrix(basic_tree_punish_2misclass1_test_prediction, fetal_test$NSP) # test acc = 0.9176 
+
+# better at getting 2's 
 
 
+```
+
+
+## Common Tree with Lower Prob Threshold to Classifying Class 2
+
+```{r}
+basic_tree_train_predicted_probs <- predict(basic_tree, fetal_train, type = "prob")
+basic_tree_test_predicted_probs <- predict(basic_tree, fetal_test, type = "prob")
+prob_threshold_class2 <- 0.2 # can tune this with cv 
+
+basic_tree_train_prediction_threshold <- as.factor(ifelse(basic_tree_train_predicted_probs[, 2] > prob_threshold_class2, "2", colnames(basic_tree_train_predicted_probs)[max.col(basic_tree_train_predicted_probs)]))
+confusionMatrix(basic_tree_train_prediction_threshold, fetal_train$NSP)
+
+basic_tree_test_prediction_threshold <- as.factor(ifelse(basic_tree_test_predicted_probs[, 2] > prob_threshold_class2, "2", colnames(basic_tree_test_predicted_probs)[max.col(basic_tree_test_predicted_probs)]))
+confusionMatrix(basic_tree_test_prediction_threshold, fetal_test$NSP)
+```
+
+# Bagging, Random Forest
+```{r}
+library(randomForest)
+
+set.seed(263)
+rf_default <- randomForest(NSP ~ ., data = fetal_train)
+rf_default # once again, 2 is being misclassified as 1 
+```
+
+## RF with higher weight for class 2, all default params
+```{r}
+set.seed(263)
+weight2 <- 1000000 # can tune w cv 
+rf_weight2 <- randomForest(NSP ~ ., data = fetal_train, classwt = c(`1` = 1, `2` = weight2, `3` = 1))
+rf_weight2
+```
+
+## RF with lower probability threshold to predict 2
+
+```{r}
+set.seed(263)
+threshold2 <- 0.2 # can tune w cv 
+rf_threshold2 <- randomForest(NSP ~ ., data = fetal_train, cutoff = c((1 - threshold2) / 2, threshold2, (1 - threshold2) / 2))
+rf_threshold2
+```
 
