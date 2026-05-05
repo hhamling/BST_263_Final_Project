@@ -76,7 +76,6 @@ rpart.plot(basic_tree)
 basic_tree_train_prediction <- predict(basic_tree, fetal_train, type = "class")
 confusionMatrix(basic_tree_train_prediction, fetal_train$NSP) # 93.36 train acc
 
-
 # test confusion matrix 
 basic_tree_test_prediction <- predict(basic_tree, fetal_test, type = "class")
 confusionMatrix(basic_tree_test_prediction, fetal_test$NSP) # 92.47 test acc
@@ -143,8 +142,8 @@ rf_default # once again, 2 is being misclassified as 1
 ## RF with higher weight for class 2, all default params
 ```{r}
 set.seed(263)
-weight2 <- 1000000 # can tune w cv 
-rf_weight2 <- randomForest(NSP ~ ., data = fetal_train, classwt = c(`1` = 1, `2` = weight2, `3` = 1))
+rf_weight2 <- 1000000 # can tune w cv 
+rf_weight2 <- randomForest(NSP ~ ., data = fetal_train, classwt = c(`1` = 1, `2` = rf_weight2, `3` = 1))
 rf_weight2
 ```
 
@@ -156,4 +155,65 @@ threshold2 <- 0.2 # can tune w cv
 rf_threshold2 <- randomForest(NSP ~ ., data = fetal_train, cutoff = c((1 - threshold2) / 2, threshold2, (1 - threshold2) / 2))
 rf_threshold2
 ```
+
+# Boosting, defaults 
+
+```{r}
+library(gbm)
+set.seed(263)
+gbm_default <- gbm(NSP ~ ., data = fetal_train)
+
+# training confusion matrix
+gbm_default_train_prediction <- as.factor(max.col((predict.gbm(gbm_default, fetal_train, type = "response")[,,1])))
+confusionMatrix(gbm_default_train_prediction, fetal_train$NSP) # 94.42 train acc
+
+# test confusion matrix 
+gbm_default_test_prediction <- as.factor(max.col((predict.gbm(gbm_default, fetal_test, type = "response")[,,1])))
+confusionMatrix(gbm_default_test_prediction, fetal_test$NSP) # 92.47 test acc 
+
+```
+
+## Boosting, higher weight for class 2 errors
+
+```{r}
+set.seed(263)
+gbm_weight2_magnitude <- 3
+gbm_weight <- ifelse(fetal_train$NSP == 2, gbm_weight2_magnitude, 1)
+gbm_weight2 <- gbm(NSP ~ ., data = fetal_train, weights = gbm_weight)
+
+# training confusion matrix
+gbm_weight2_train_prediction <- as.factor(max.col((predict.gbm(gbm_weight2, fetal_train, type = "response")[,,1])))
+confusionMatrix(gbm_weight2_train_prediction, fetal_train$NSP) # 93.3 train acc
+
+# test confusion matrix 
+gbm_weight2_test_prediction <- as.factor(max.col((predict.gbm(gbm_weight2, fetal_test, type = "response")[,,1])))
+confusionMatrix(gbm_weight2_test_prediction, fetal_test$NSP) # 92.94 test acc 
+
+# reduces the misclassification of 2 as 1
+```
+
+## Boosting, lowered probability threshold for class 2
+
+```{r}
+# using the default boosting with even weights for all classes 
+
+gmb_2threshold <- 0.27
+
+gbm_default_train_probs <- as.data.frame(predict.gbm(gbm_default, fetal_train, type = "response"))
+colnames(gbm_default_train_probs) <- c("1", "2", "3")
+gbm_threshold_train_predictions <- as.factor(ifelse(gbm_default_train_probs$`2` > gmb_2threshold, "2",
+               colnames(gbm_default_train_probs)[max.col(gbm_default_train_probs)]))
+
+gbm_default_test_probs <- as.data.frame(predict.gbm(gbm_default, fetal_test, type = "response"))
+colnames(gbm_default_test_probs) <- c("1", "2", "3")
+gbm_threshold_test_predictions <- as.factor(ifelse(gbm_default_test_probs$`2` > gmb_2threshold, "2",
+               colnames(gbm_default_test_probs)[max.col(gbm_default_test_probs)]))
+
+# training confusion matrix
+confusionMatrix(gbm_threshold_train_predictions, fetal_train$NSP) # 92.59 train acc
+
+# test confusion matrix 
+confusionMatrix(gbm_threshold_test_predictions, fetal_test$NSP) # 92 test acc 
+```
+
 
