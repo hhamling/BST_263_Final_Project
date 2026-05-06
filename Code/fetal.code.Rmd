@@ -10,6 +10,7 @@ knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse)
 ```
 
+
 ## Read in data/variable selection
 ```{r, message = FALSE}
 library(readxl)
@@ -62,15 +63,59 @@ table(fetal_train$NSP)
 table(fetal_test$NSP)
 ```
 
-# Basic Tree Using All Variables
+# Custom Asymmetric Loss Analysis
+
+We have a classification problem with 3 classes of fetal state (1 = Normal, 2 = Suspect, 3 = Pathological). Classes 2 and 3 are underrepresented compared to class 1. Clinically, certain misclassifications are more harmful than others. 
+
+* Mistaking 3 as 1: Worst possible mistake 
+* Mistaking 2 as 1: Also a pretty bad mistake 
+* Mistaking 3 as 2: Bad, but not as bad as the previous two cases
+* Mistaking 2 as 3: not that bad
+* Mistaking 1 as 2: not that bad 
+* Mistaking 1 as 3: not that bad 
+
+Thus, we can define a custom loss that punishes certain mixups accordingly.
+
+```{r}
+# row is true class, column is predicted class
+
+# all misclassifications are punished equally 
+loss_default <- matrix(c(0, 1, 1,
+                         1, 0, 1,
+                         1, 1, 0), nrow = 3, byrow = TRUE)
+
+# we can change these values, like idk is a false negative 5x as bad as a false positive 
+loss_mild <- matrix(c(0, 1, 1,
+                         4, 0, 1,
+                         5, 2, 0), nrow = 3, byrow = TRUE)
+
+
+loss_aggressive <- matrix(c(0, 1, 1,
+                         7, 0, 1,
+                         10, 2, 0), nrow = 3, byrow = TRUE)
+
+calculate_loss <- function(true_labels, predicted_labels, loss_matrix) {
+  true_labels <- as.numeric(true_labels)
+  predicted_labels <- as.numeric(predicted_labels)
+  mean(mapply(FUN = function(t, p) loss_matrix[t, p], true_labels, predicted_labels))
+}
+```
+
+
+
+## Default Single Tree Using All Variables
+
+Let's see how a single basic tree with all variables and default arguments does with our custom loss. We see that 2 gets misclassified as 1 a lot (bad mistake), which increases the loss.
 
 ```{r}
 library(rpart)
 library(rpart.plot) 
 
+set.seed(263)
+
 basic_tree <- rpart(NSP ~ . , data = fetal_train, method = "class")
 
-rpart.plot(basic_tree)
+#rpart.plot(basic_tree)
 
 # training confusion matrix
 basic_tree_train_prediction <- predict(basic_tree, fetal_train, type = "class")
@@ -81,82 +126,42 @@ basic_tree_test_prediction <- predict(basic_tree, fetal_test, type = "class")
 confusionMatrix(basic_tree_test_prediction, fetal_test$NSP) # 92.47 test acc
 
 # model predicts a lot of 2's as 1's, so we should punish this more 
+
+# training losses
+calculate_loss(basic_tree_train_prediction, fetal_train$NSP, loss_default) # default, 0.0664
+calculate_loss(basic_tree_train_prediction, fetal_train$NSP, loss_mild) # mild, 0.11
+calculate_loss(basic_tree_train_prediction, fetal_train$NSP, loss_aggressive) # aggressive, 0.1558
+
+# test losses
+calculate_loss(basic_tree_test_prediction, fetal_test$NSP, loss_default) # default, 0.075
+calculate_loss(basic_tree_test_prediction, fetal_test$NSP, loss_mild) # mild, 0.111
+calculate_loss(basic_tree_test_prediction, fetal_test$NSP, loss_aggressive) # aggressive, 0.146
 ```
 
-## Basic Tree with Harsh Punishment for Common Mixup 
-```{r}
-# punish the common mistake of classifying a 2 as a 1
+## Default RF
 
-# row is true class, column is predicted class
-# harsh punishment for misclassifying 1 as 2 (# can do like cv or something for this value)
-punishment <- 2
-loss_matrix_2misclassified1 <- matrix(c(
-  0,  1,  1,  
-  punishment,  0,  1,  # harsh punishment for misclassifying 2 as 1
-  1,  1,  0 ), nrow = 3, byrow = TRUE)
-rownames(loss_matrix_2misclassified1) <- c("class1", "class2", "class3")
-colnames(loss_matrix_2misclassified1) <- c("class1", "class2", "class3")
+The default RF model shows a large class error rate for class 2 (and 3 somewhat), so the loss increases when we use our custom loss.
 
-# control the tree by requiring at least 5% of the training data in each node
-basic_tree_punish_2misclass1 <- rpart(NSP ~ . , data = fetal_train, method = "class",
-                               parms = list(loss = loss_matrix_2misclassified1))
-rpart.plot(basic_tree_punish_2misclass1)
-
-# training confusion matrix
-basic_tree_punish_2misclass1_train_prediction <- predict(basic_tree_punish_2misclass1, fetal_train, type = "class")
-confusionMatrix(basic_tree_punish_2misclass1_train_prediction, fetal_train$NSP) # train acc = .9406
-
-# test confusion matrix 
-basic_tree_punish_2misclass1_test_prediction <- predict(basic_tree_punish_2misclass1, fetal_test, type = "class")
-confusionMatrix(basic_tree_punish_2misclass1_test_prediction, fetal_test$NSP) # test acc = 0.9176 
-
-# better at getting 2's 
-
-
-```
-
-
-## Common Tree with Lower Prob Threshold to Classifying Class 2
-
-```{r}
-basic_tree_train_predicted_probs <- predict(basic_tree, fetal_train, type = "prob")
-basic_tree_test_predicted_probs <- predict(basic_tree, fetal_test, type = "prob")
-prob_threshold_class2 <- 0.2 # can tune this with cv 
-
-basic_tree_train_prediction_threshold <- as.factor(ifelse(basic_tree_train_predicted_probs[, 2] > prob_threshold_class2, "2", colnames(basic_tree_train_predicted_probs)[max.col(basic_tree_train_predicted_probs)]))
-confusionMatrix(basic_tree_train_prediction_threshold, fetal_train$NSP)
-
-basic_tree_test_prediction_threshold <- as.factor(ifelse(basic_tree_test_predicted_probs[, 2] > prob_threshold_class2, "2", colnames(basic_tree_test_predicted_probs)[max.col(basic_tree_test_predicted_probs)]))
-confusionMatrix(basic_tree_test_prediction_threshold, fetal_test$NSP)
-```
-
-# Bagging, Random Forest
 ```{r}
 library(randomForest)
-
 set.seed(263)
 rf_default <- randomForest(NSP ~ ., data = fetal_train)
-rf_default # once again, 2 is being misclassified as 1 
+rf_default # once again, 2 is being misclassified as 1, OOB error = 5.7%
+
+# train losses
+calculate_loss(predict(rf_default, fetal_train), fetal_train$NSP, loss_default) # default, 0.00118
+calculate_loss(predict(rf_default, fetal_train), fetal_train$NSP, loss_mild) # mild, 0.00294
+calculate_loss(predict(rf_default, fetal_train), fetal_train$NSP, loss_aggressive) # aggressive, 0.0047
+
+# test losses
+calculate_loss(predict(rf_default, fetal_test), fetal_test$NSP, loss_default) # default, 0.0588
+calculate_loss(predict(rf_default, fetal_test), fetal_test$NSP, loss_mild) # mild, 0.0964
+calculate_loss(predict(rf_default, fetal_test), fetal_test$NSP, loss_aggressive) # aggressive, 0.132
 ```
 
-## RF with higher weight for class 2, all default params
-```{r}
-set.seed(263)
-rf_weight2 <- 1000000 # can tune w cv 
-rf_weight2 <- randomForest(NSP ~ ., data = fetal_train, classwt = c(`1` = 1, `2` = rf_weight2, `3` = 1))
-rf_weight2
-```
+## Default Boosting 
 
-## RF with lower probability threshold to predict 2
-
-```{r}
-set.seed(263)
-threshold2 <- 0.2 # can tune w cv 
-rf_threshold2 <- randomForest(NSP ~ ., data = fetal_train, cutoff = c((1 - threshold2) / 2, threshold2, (1 - threshold2) / 2))
-rf_threshold2
-```
-
-# Boosting, defaults 
+Boosting model also misclassifies 2 as 1 a lot. 3 as 1 too sometimes.
 
 ```{r}
 library(gbm)
@@ -171,49 +176,141 @@ confusionMatrix(gbm_default_train_prediction, fetal_train$NSP) # 94.42 train acc
 gbm_default_test_prediction <- as.factor(max.col((predict.gbm(gbm_default, fetal_test, type = "response")[,,1])))
 confusionMatrix(gbm_default_test_prediction, fetal_test$NSP) # 92.47 test acc 
 
+# train losses 
+calculate_loss(gbm_default_train_prediction, fetal_train$NSP, loss_default) # default, 0.0558
+calculate_loss(gbm_default_train_prediction, fetal_train$NSP, loss_mild) # mild, 0.1058
+calculate_loss(gbm_default_train_prediction, fetal_train$NSP, loss_aggressive) # aggressive, 0.1605
+
+# test losses
+calculate_loss(gbm_default_test_prediction, fetal_test$NSP, loss_default) # default, 0.0752
+calculate_loss(gbm_default_test_prediction, fetal_test$NSP, loss_mild) # mild, 0.1388
+calculate_loss(gbm_default_test_prediction, fetal_test$NSP, loss_aggressive) # aggressive, 0.202
 ```
 
-## Boosting, higher weight for class 2 errors
+
+## RF CV 
+
+now doing cv to select the best RF hyperparameters but according to our custom loss (hopefully helps to fix the bad sorts of mixups)
+
+Hyperparameters include: mtry and ntree
 
 ```{r}
+# warning this chunk takes TIME 
 set.seed(263)
-gbm_weight2_magnitude <- 3
-gbm_weight <- ifelse(fetal_train$NSP == 2, gbm_weight2_magnitude, 1)
-gbm_weight2 <- gbm(NSP ~ ., data = fetal_train, weights = gbm_weight)
+# 5 folds
+K <- 5 
+fold <- sample(1:K, nrow(fetal_train), replace = TRUE)
 
-# training confusion matrix
-gbm_weight2_train_prediction <- as.factor(max.col((predict.gbm(gbm_weight2, fetal_train, type = "response")[,,1])))
-confusionMatrix(gbm_weight2_train_prediction, fetal_train$NSP) # 93.3 train acc
+mtry_values <- c(3, 5, 7, 9) # we have 20 variables, the default is p/3
+ntree_values <- c(250, 500, 750, 1000, 1500) # default is 500
 
-# test confusion matrix 
-gbm_weight2_test_prediction <- as.factor(max.col((predict.gbm(gbm_weight2, fetal_test, type = "response")[,,1])))
-confusionMatrix(gbm_weight2_test_prediction, fetal_test$NSP) # 92.94 test acc 
+rf_cv_results <- data.frame(mtry = c(), ntree = c(), loss_default = c(), loss_mild = c(), loss_aggressive = c())
 
-# reduces the misclassification of 2 as 1
+for(m in mtry_values) {
+  for(n in ntree_values) {
+    fold_loss_default <- c()
+    fold_loss_mild <- c()
+    fold_loss_aggressive <- c()
+    
+    for(k in 1:K) {
+      train <- fetal_train[fold != k, ]
+      val <- fetal_train[fold == k, ]
+      
+      rf_model <- randomForest(NSP ~ .,
+                               data = train, 
+                               mtry = m,
+                               ntree = n)
+      
+      fold_loss_default[k] <- calculate_loss(val$NSP, predict(rf_model, val), loss_default)
+      fold_loss_mild[k] <- calculate_loss(val$NSP, predict(rf_model, val), loss_mild)
+      fold_loss_aggressive[k] <- calculate_loss(val$NSP, predict(rf_model, val), loss_aggressive)
+    }
+    
+    rf_cv_results <- rf_cv_results |> rbind(data.frame(
+      mtry = m,
+      ntree = n,
+      loss_default = mean(fold_loss_default),
+      loss_mild = mean(fold_loss_mild),
+      loss_aggressive = mean(fold_loss_aggressive))
+    )
+    
+  }
+}
+
+rf_cv_results
 ```
 
-## Boosting, lowered probability threshold for class 2
 
 ```{r}
-# using the default boosting with even weights for all classes 
-
-gmb_2threshold <- 0.27
-
-gbm_default_train_probs <- as.data.frame(predict.gbm(gbm_default, fetal_train, type = "response"))
-colnames(gbm_default_train_probs) <- c("1", "2", "3")
-gbm_threshold_train_predictions <- as.factor(ifelse(gbm_default_train_probs$`2` > gmb_2threshold, "2",
-               colnames(gbm_default_train_probs)[max.col(gbm_default_train_probs)]))
-
-gbm_default_test_probs <- as.data.frame(predict.gbm(gbm_default, fetal_test, type = "response"))
-colnames(gbm_default_test_probs) <- c("1", "2", "3")
-gbm_threshold_test_predictions <- as.factor(ifelse(gbm_default_test_probs$`2` > gmb_2threshold, "2",
-               colnames(gbm_default_test_probs)[max.col(gbm_default_test_probs)]))
-
-# training confusion matrix
-confusionMatrix(gbm_threshold_train_predictions, fetal_train$NSP) # 92.59 train acc
-
-# test confusion matrix 
-confusionMatrix(gbm_threshold_test_predictions, fetal_test$NSP) # 92 test acc 
+# this is the best set of hyperparameters for the mild loss
+# we see a lower class error in classes 2 and 3 compared to the default og RF model
+# still kinda bad for class 2 tho 
+randomForest(NSP ~., data = fetal_train, ntree = 750, mtry = 7)
 ```
 
 
+
+## GBM CV 
+
+now doing cv to select the best GBM hyperparameters but according to our custom loss (hopefully helps to fix the bad sorts of mixups)
+
+Hyperparameters include: n.trees, interaction.depth, shrinkage
+
+```{r warning = FALSE, message = FALSE}
+gbm_cv_results <- data.frame(n.trees = c(), interaction.depth = c(), shrinkage = c(), loss_default = c(), loss_mild = c(), loss_aggressive = c())
+
+n.trees_values <- c(50, 100, 250, 500, 1000) # default is 100
+interaction.depth_values <- c(1, 2, 3) # default is a depth of 1
+shrinkage_values <- c(0.001, 0.01, 0.1, 0.2) # default is 0.1
+
+for(n in n.trees_values) {
+  for(d in interaction.depth_values) {
+    for(s in shrinkage_values) {
+      fold_loss_default <- c()
+      fold_loss_mild <- c()
+      fold_loss_aggressive <- c()
+      
+      for(k in 1:K) {
+        train <- fetal_train[fold != k, ]
+        val <- fetal_train[fold == k, ]
+        
+        gbm_model <- gbm(NSP ~ ., data = train, distribution = "multinomial",
+                         n.trees = n, interaction.depth = d, shrinkage = s)
+        
+        val_probs <- predict(gbm_model, val, n.trees = n, type = "response")[,,1]
+        colnames(val_probs) <- c("1", "2", "3")
+        val_predicted_label <- colnames(val_probs)[max.col(val_probs)]
+ 
+        fold_loss_default[k] <- calculate_loss(val$NSP, val_predicted_label, loss_default)
+        fold_loss_mild[k] <- calculate_loss(val$NSP, val_predicted_label, loss_mild)
+        fold_loss_aggressive[k] <- calculate_loss(val$NSP, val_predicted_label, loss_aggressive)
+      }
+    gbm_cv_results <- gbm_cv_results |> rbind(data.frame(
+      n.trees = n,
+      interaction.depth = d,
+      shrinkage = s,
+      loss_default = mean(fold_loss_default),
+      loss_mild = mean(fold_loss_mild),
+      loss_aggressive = mean(fold_loss_aggressive))
+    )
+    }
+  }
+}
+
+gbm_cv_results
+```
+
+```{r}
+# best hyperparameters according to loss mild is 250 trees, depth 3, 0.2 shrinkage 
+set.seed(263)
+gbm1 <- gbm(NSP ~., data = fetal_train, n.trees = 250, interaction.depth = 3, shrinkage = 0.2)
+gbm1_probs_train <- predict(gbm1, fetal_train, n.trees = n, type = "response")[,,1]
+colnames(gbm1_probs_train) <- c("1", "2", "3")
+gbm1_class_train <- as.factor(colnames(gbm1_probs_train)[max.col(gbm1_probs_train)])
+confusionMatrix(gbm1_class_train, fetal_train$NSP) 
+
+gbm1_probs_test <- predict(gbm1, fetal_test, n.trees = n, type = "response")[,,1]
+colnames(gbm1_probs_test) <- c("1", "2", "3")
+gbm1_class_test <- as.factor(colnames(gbm1_probs_test)[max.col(gbm1_probs_test)])
+confusionMatrix(gbm1_class_test, fetal_test$NSP) # OH WOW it really did good on classes 2 and 3 compared to before 
+```
