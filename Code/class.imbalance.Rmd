@@ -84,9 +84,9 @@ names(fetal_balanced_train)[names(fetal_balanced_train) == "class"] <- "NSP"
 fetal_balanced_train$NSP <- as.factor(fetal_balanced_train$NSP)
 ```
 
-Modelling a single tree on an unbalanced training set results in a test accuracy of %92.47. The model misclassifies 2s as 1s (40% of the time).
+In fetal.code.Rmd, we saw that modelling a single tree on an unbalanced training set resulted in a test accuracy of %92.47. The model misclassifies 2s as 1s often (40% of the time).
 
-Modelling a single tree on a balanced training set results in a test accuracy of %91.76 and it still misclassifies 2 as 1s (40% of the time).
+Modelling a single tree on a balanced training set results in a test accuracy of %91.76 and it still misclassifies 2 as 1s often (40% of the time).
 ```{r}
 set.seed(263)
 
@@ -113,8 +113,7 @@ calculate_loss(basic_tree_balanced_test_prediction, fetal_test$NSP, loss_default
 calculate_loss(basic_tree_balanced_test_prediction, fetal_test$NSP, loss_mild) 
 calculate_loss(basic_tree_balanced_test_prediction, fetal_test$NSP, loss_aggressive) 
 ```
-Comparing the test sensitivity computed from the single tree modelled on an unbalanced training set compared to a balanced set, we notice the following: 
-The sensitivity stays the same for class 2 and improves slightly from 91.4% to 94.3% for class 3.
+Comparing the test sensitivity computed from the single tree modelled on an unbalanced training set compared to a balanced set, we notice that the sensitivity stays the same for class 2 and improves slightly from 91.4% to 94.3% for class 3.
 
 Now let's use the balanced data for random forest and gradient boosting modelling, using cross-validation to choose the best hyperparameters.
 
@@ -261,7 +260,7 @@ gbm_cv_results
 Best RF model with default loss:
 mtry = 9
 ntree = 1500
-test accuracy = 2.6%
+test accuracy = 93.88%
 ```{r}
 set.seed(263)
 # default loss: best rf
@@ -282,6 +281,8 @@ best_rf_default_loss_model # OOB error = 2.6%
 calculate_loss(fetal_balanced_train$NSP, predict(best_rf_default_loss_model, fetal_balanced_train), loss_default) #0.0003214401
 # test
 calculate_loss(fetal_test$NSP, predict(best_rf_default_loss_model, fetal_test), loss_default) # 0.06117647 (lowest loss out of the three loss models)
+
+confusionMatrix(predict(best_rf_default_loss_model, fetal_test), fetal_test$NSP)
 ```
 
 Best gbm model with default loss:
@@ -317,7 +318,7 @@ calculate_loss(fetal_test$NSP, get_gbm_labels(best_gbm_default_loss_model, fetal
 Best RF model with mild loss:
 mtry = 9
 ntree = 1500
-test accuracy = 2.6%
+test accuracy = 93.88%
 ```{r}
 set.seed(263)
 # mild loss: best rf
@@ -337,6 +338,9 @@ best_rf_mild_loss_model # OOB error = 2.6%
 calculate_loss(fetal_balanced_train$NSP, predict(best_rf_mild_loss_model, fetal_balanced_train), loss_mild) # 0.0009643202
 # test
 calculate_loss(fetal_test$NSP, predict(best_rf_mild_loss_model, fetal_test), loss_mild) # 0.1482353
+
+
+confusionMatrix(predict(best_rf_mild_loss_model, fetal_test), fetal_test$NSP)
 ```
 
 Best gbm model with mild loss:
@@ -371,7 +375,7 @@ calculate_loss(fetal_test$NSP, get_gbm_labels(best_gbm_mild_loss_model, fetal_te
 Best RF model with aggressive loss:
 mtry = 9
 ntree = 1500
-test accuracy = 2.6%
+test accuracy = 93.88%
 ```{r}
 set.seed(263)
 # aggressive loss: best rf
@@ -391,6 +395,9 @@ best_rf_aggressive_loss_model # OOB error = 2.6% (same as the other two loss mod
 calculate_loss(fetal_balanced_train$NSP, predict(best_rf_aggressive_loss_model, fetal_balanced_train), loss_aggressive) # 0.003857281
 # test
 calculate_loss(fetal_test$NSP, predict(best_rf_aggressive_loss_model, fetal_test), loss_aggressive) # 0.5058824
+
+# test set accuracy 93.88%
+confusionMatrix(predict(best_rf_aggressive_loss_model, fetal_test), fetal_test$NSP)
 ```
 Best gbm model with aggressive loss:
 n.trees = 50
