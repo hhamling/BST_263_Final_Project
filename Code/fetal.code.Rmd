@@ -32,8 +32,6 @@ dim(fetal) #2129 rows (people), 20 features, 1 outcome variable (NSP)
 fetal <- fetal[-c(2127,2128),]
 dim(fetal) #2127 people, 20 features, 1 outcome variable
 fetal[!complete.cases(fetal), ] #only this one row missing data
-
-
 ```
 
 ## Look at class frequencies (for later class minority adjustment)
@@ -46,7 +44,15 @@ summary(fetal$NSP)
 fetal <- fetal |> drop_na(NSP) 
 
 #1655 are normal, 295 are suspect, 176 are pathologic
-plot(fetal$NSP)
+plot(fetal$NSP, main = "Fetal Heart Rate Levels", sub = "Figure 1")
+
+#install.packages("flextable")
+library(flextable)
+library(dplyr)
+as.data.frame(prop.table(table(fetal$NSP))) |>
+  rename("NSP Level" = Var1, "Proportion" = Freq) |>
+  flextable() |>
+  set_caption("Figure 2: Proportions of Fetal Heart Rate Levels")
 ```
 
 ```{r}
