@@ -428,3 +428,6 @@ calculate_loss(fetal_balanced_train$NSP, get_gbm_labels(best_gbm_aggressive_loss
 calculate_loss(fetal_test$NSP, get_gbm_labels(best_gbm_aggressive_loss_model, fetal_test, n.trees = best_gbm_aggressive_loss_n.trees), loss_aggressive) 
 ```
 
+Discussion points: RF consistently selects mtry = 9 and ntree = 1500 across the 3 loss functions
+  -  best: more trees with more features per split,  93.88% test accuracy,  2.6% OOB
+GBM: slightly higher accuracy of about 94.6% under aggressive loss settings
