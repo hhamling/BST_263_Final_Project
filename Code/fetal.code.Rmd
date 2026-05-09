@@ -10,7 +10,6 @@ knitr::opts_chunk$set(echo = TRUE, cache = TRUE)
 library(tidyverse)
 ```
 
-
 ## Read in data/variable selection
 ```{r, message = FALSE}
 library(readxl)
@@ -59,6 +58,7 @@ as.data.frame(prop.table(table(fetal$NSP))) |>
 library(caret)
 set.seed(263)
 
+#80/20 split
 train_indices <- createDataPartition(fetal$NSP, p = 0.8, list = FALSE)
 
 fetal_train <- fetal[train_indices, ]
@@ -91,10 +91,12 @@ loss_default <- matrix(c(0, 1, 1,
                          1, 1, 0), nrow = 3, byrow = TRUE)
 
 # we can change these values, like idk is a false negative 4x as bad as a false positive 
+#4 times as bad
 loss_mild <- matrix(c(0, 1, 1,
                          3, 0, 1,
                          4, 2, 0), nrow = 3, byrow = TRUE)
 
+#12 times as bad
 loss_aggressive <- matrix(c(0, 1, 1,
                          12, 0, 1,
                          12, 3, 0), nrow = 3, byrow = TRUE)
@@ -105,8 +107,6 @@ calculate_loss <- function(true_labels, predicted_labels, loss_matrix) {
   mean(mapply(FUN = function(t, p) loss_matrix[t, p], true_labels, predicted_labels))
 }
 ```
-
-
 
 ## Default Single Tree Using All Variables
 
@@ -132,15 +132,15 @@ confusionMatrix(basic_tree_test_prediction, fetal_test$NSP) # 92.47 test acc
 
 # model predicts a lot of 2's as 1's, so we should punish this more 
 
-# training losses
-calculate_loss(basic_tree_train_prediction, fetal_train$NSP, loss_default) 
-calculate_loss(basic_tree_train_prediction, fetal_train$NSP, loss_mild) 
-calculate_loss(basic_tree_train_prediction, fetal_train$NSP, loss_aggressive)
+# training losses: highest with aggressive
+calculate_loss(basic_tree_train_prediction, fetal_train$NSP, loss_default) #0.06643151
+calculate_loss(basic_tree_train_prediction, fetal_train$NSP, loss_mild) #0.09817754
+calculate_loss(basic_tree_train_prediction, fetal_train$NSP, loss_aggressive) #0.2016461
 
-# test losses
-calculate_loss(basic_tree_test_prediction, fetal_test$NSP, loss_default) 
-calculate_loss(basic_tree_test_prediction, fetal_test$NSP, loss_mild) 
-calculate_loss(basic_tree_test_prediction, fetal_test$NSP, loss_aggressive) 
+# test losses: highest with aggressive
+calculate_loss(basic_tree_test_prediction, fetal_test$NSP, loss_default) #0.07529412
+calculate_loss(basic_tree_test_prediction, fetal_test$NSP, loss_mild) #0.09882353
+calculate_loss(basic_tree_test_prediction, fetal_test$NSP, loss_aggressive) #0.2047059
 ```
 
 ## Default RF
@@ -153,15 +153,15 @@ set.seed(263)
 rf_default <- randomForest(NSP ~ ., data = fetal_train)
 rf_default # once again, 2 is being misclassified as 1, OOB error = 5.7%
 
-# train losses
-calculate_loss(predict(rf_default, fetal_train), fetal_train$NSP, loss_default) 
-calculate_loss(predict(rf_default, fetal_train), fetal_train$NSP, loss_mild) 
-calculate_loss(predict(rf_default, fetal_train), fetal_train$NSP, loss_aggressive) 
+# train losses: highest with aggressive loss
+calculate_loss(predict(rf_default, fetal_train), fetal_train$NSP, loss_default) #0.001175779
+calculate_loss(predict(rf_default, fetal_train), fetal_train$NSP, loss_mild) #0.002351558
+calculate_loss(predict(rf_default, fetal_train), fetal_train$NSP, loss_aggressive) #0.007642563
 
-# test losses
-calculate_loss(predict(rf_default, fetal_test), fetal_test$NSP, loss_default) 
-calculate_loss(predict(rf_default, fetal_test), fetal_test$NSP, loss_mild) 
-calculate_loss(predict(rf_default, fetal_test), fetal_test$NSP, loss_aggressive) 
+# test losses: highest with aggressive loss
+calculate_loss(predict(rf_default, fetal_test), fetal_test$NSP, loss_default) #0.05882353
+calculate_loss(predict(rf_default, fetal_test), fetal_test$NSP, loss_mild) #0.08470588
+calculate_loss(predict(rf_default, fetal_test), fetal_test$NSP, loss_aggressive) #0.1929412
 ```
 
 ## Default Boosting 
@@ -186,15 +186,15 @@ confusionMatrix(gbm_default_train_prediction, fetal_train$NSP) # 94.42 train acc
 gbm_default_test_prediction <- get_gbm_labels(gbm_default, fetal_test)
 confusionMatrix(gbm_default_test_prediction, fetal_test$NSP) # 92.47 test acc 
 
-# train losses 
-calculate_loss(gbm_default_train_prediction, fetal_train$NSP, loss_default) 
-calculate_loss(gbm_default_train_prediction, fetal_train$NSP, loss_mild) 
-calculate_loss(gbm_default_train_prediction, fetal_train$NSP, loss_aggressive) 
+# train losses: highest with aggressive
+calculate_loss(gbm_default_train_prediction, fetal_train$NSP, loss_default) #0.0558495
+calculate_loss(gbm_default_train_prediction, fetal_train$NSP, loss_mild) #0.09112287
+calculate_loss(gbm_default_train_prediction, fetal_train$NSP, loss_aggressive) #0.2186949
 
-# test losses
-calculate_loss(gbm_default_test_prediction, fetal_test$NSP, loss_default) 
-calculate_loss(gbm_default_test_prediction, fetal_test$NSP, loss_mild) 
-calculate_loss(gbm_default_test_prediction, fetal_test$NSP, loss_aggressive) 
+# test losses: highest with aggressive
+calculate_loss(gbm_default_test_prediction, fetal_test$NSP, loss_default) #0.07529412
+calculate_loss(gbm_default_test_prediction, fetal_test$NSP, loss_mild) #0.1176471
+calculate_loss(gbm_default_test_prediction, fetal_test$NSP, loss_aggressive) #0.3082353
 ```
 
 
@@ -247,8 +247,13 @@ for(m in mtry_values) {
 }
 
 rf_cv_results
+which.min(rf_cv_results$loss_default) #10
+rf_cv_results[10,] #mtry of 5, 1500 trees
+which.min(rf_cv_results$loss_mild) #13
+rf_cv_results[13,] #mtry of 7, 750 trees
+which.min(rf_cv_results$loss_aggressive) #13
+rf_cv_results[13,] #mtry of 7, 750 trees
 ```
-
 
 
 ## GBM CV 
@@ -299,6 +304,15 @@ for(n in n.trees_values) {
 }
 
 gbm_cv_results 
+
+which.min(gbm_cv_results$loss_default) #44
+gbm_cv_results[44,] #default best at 250 trees, depth of 5, shrinkage of 0.1
+
+which.min(gbm_cv_results$loss_mild) #41
+gbm_cv_results[41,] #default best at 250 trees, depth of 4, shrinkage of 0.1
+
+which.min(gbm_cv_results$loss_aggressive) #42
+gbm_cv_results[42,] #default best at 250 trees, depth of 4, shrinkage of 0.2
 ```
 
 
