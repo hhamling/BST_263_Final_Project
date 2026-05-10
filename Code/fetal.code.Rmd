@@ -315,7 +315,6 @@ which.min(gbm_cv_results$loss_aggressive) #42
 gbm_cv_results[42,] #default best at 250 trees, depth of 4, shrinkage of 0.2
 ```
 
-
 ## Choosing Best Model based on Custom Loss
 
 We choose to sacrifice overall accuracy in order to improve in positive identification of classes 2 and 3.
@@ -334,9 +333,12 @@ best_rf_default_loss_model <- randomForest(NSP ~., data = fetal_train,
                                            ntree = best_rf_default_loss_ntree, 
                                            mtry = best_rf_default_loss_mtry)
 best_rf_default_loss_model # OOB error = 5.29%, lots of 2's classified as 1's
+#class 1 error = 0.01057402
+#class 2 error = 0.26694915, labels as 1's quite a bit
+#class 3 error = 0.09219858
 
-calculate_loss(fetal_train$NSP, predict(best_rf_default_loss_model, fetal_train), loss_default) 
-calculate_loss(fetal_test$NSP, predict(best_rf_default_loss_model, fetal_test), loss_default) 
+calculate_loss(fetal_train$NSP, predict(best_rf_default_loss_model, fetal_train), loss_default) #0.001175779
+calculate_loss(fetal_test$NSP, predict(best_rf_default_loss_model, fetal_test), loss_default) #0.06117647
 ```
 
 Best GBM with default loss is n.trees = 250, interaction.depth = 5, shrinkage = 0.1
@@ -356,11 +358,13 @@ best_gbm_default_loss_model <- gbm(NSP ~., data = fetal_train,
 confusionMatrix(get_gbm_labels(best_gbm_default_loss_model, fetal_train, n.trees = best_gbm_default_loss_n.trees), fetal_train$NSP) # train acc = 99.84%
 
 confusionMatrix(get_gbm_labels(best_gbm_default_loss_model, fetal_test, n.trees = best_gbm_default_loss_n.trees), fetal_test$NSP) # test acc = 93.65%
+#class 1 balanced accuracy = 0.9051
+#class 2 balanced accuaracy = 0.8748
+#class 3 balanced accuracy = 0.94158
 
-calculate_loss(fetal_train$NSP, get_gbm_labels(best_gbm_default_loss_model, fetal_train, n.trees = best_gbm_default_loss_n.trees), loss_default) 
-calculate_loss(fetal_test$NSP, get_gbm_labels(best_gbm_default_loss_model, fetal_test, n.trees = best_gbm_default_loss_n.trees), loss_default)
+calculate_loss(fetal_train$NSP, get_gbm_labels(best_gbm_default_loss_model, fetal_train, n.trees = best_gbm_default_loss_n.trees), loss_default) #0.0005878895
+calculate_loss(fetal_test$NSP, get_gbm_labels(best_gbm_default_loss_model, fetal_test, n.trees = best_gbm_default_loss_n.trees), loss_default) #0.06352941
 ```
-
 
 ### Mild Loss
 
@@ -376,9 +380,12 @@ best_rf_mild_loss_model <- randomForest(NSP ~., data = fetal_train,
                                         ntree = best_rf_mild_loss_ntree, 
                                         mtry = best_rf_mild_loss_mtry)
 best_rf_mild_loss_model # OOB error = 5.47%, still pretty bad at 2's but better at 3's than default loss RF
+#class 1 error = 0.01283988
+#class 2 error = 0.27542373
+#class 3 error = 0.07801418
 
-calculate_loss(fetal_train$NSP, predict(best_rf_mild_loss_model, fetal_train), loss_mild) 
-calculate_loss(fetal_test$NSP, predict(best_rf_mild_loss_model, fetal_test), loss_mild) 
+calculate_loss(fetal_train$NSP, predict(best_rf_mild_loss_model, fetal_train), loss_mild) #0.0005878895
+calculate_loss(fetal_test$NSP, predict(best_rf_mild_loss_model, fetal_test), loss_mild) #0.1576471
 ```
 
 Best GBM with mild loss is n.trees = 250, interaction.depth = 4, shrinkage = 0.1
@@ -398,11 +405,11 @@ best_gbm_mild_loss_model <- gbm(NSP ~., data = fetal_train,
 confusionMatrix(get_gbm_labels(best_gbm_mild_loss_model, fetal_train, n.trees = best_gbm_mild_loss_n.trees), fetal_train$NSP) # train acc = 99.88%
 
 confusionMatrix(get_gbm_labels(best_gbm_mild_loss_model, fetal_test, n.trees = best_gbm_mild_loss_n.trees), fetal_test$NSP) # test acc = 94.82%
+#balanced class accuracies: 0.9173   0.8762  0.93901
 
-calculate_loss(fetal_train$NSP, get_gbm_labels(best_gbm_mild_loss_model, fetal_train, n.trees = best_gbm_mild_loss_n.trees), loss_mild) 
-calculate_loss(fetal_test$NSP, get_gbm_labels(best_gbm_mild_loss_model, fetal_test, n.trees = best_gbm_mild_loss_n.trees), loss_mild) 
+calculate_loss(fetal_train$NSP, get_gbm_labels(best_gbm_mild_loss_model, fetal_train, n.trees = best_gbm_mild_loss_n.trees), loss_mild) #0.001175779
+calculate_loss(fetal_test$NSP, get_gbm_labels(best_gbm_mild_loss_model, fetal_test, n.trees = best_gbm_mild_loss_n.trees), loss_mild) #0.1317647
 ```
-
 
 ### Aggressive Loss 
 
@@ -418,19 +425,21 @@ best_rf_aggressive_loss_model <- randomForest(NSP ~., data = fetal_train,
                                         ntree = best_rf_aggressive_loss_ntree, 
                                         mtry = best_rf_aggressive_loss_mtry)
 best_rf_aggressive_loss_model # OOB error = 5.47%, still pretty bad at 2's but better at 3's than default loss RF
+  #class 1 error = 0.01283988
+  #class 2 error = 0.27542373 (flags a lot as 1's)
+  #class 3 error = 0.07801418 (some FN)
 
-calculate_loss(fetal_train$NSP, predict(best_rf_aggressive_loss_model, fetal_train), loss_aggressive) 
-calculate_loss(fetal_test$NSP, predict(best_rf_aggressive_loss_model, fetal_test), loss_aggressive) 
+calculate_loss(fetal_train$NSP, predict(best_rf_aggressive_loss_model, fetal_train), loss_aggressive) #0.0005878895
+calculate_loss(fetal_test$NSP, predict(best_rf_aggressive_loss_model, fetal_test), loss_aggressive) #0.5576471
 ```
 
-
 Best GBM with aggressive loss is n.trees = 250, interaction.depth = 4, shrinkage = 0.2. This model has the most balanced accuracy 
-
 
 ```{r}
 set.seed(263)
 best_gbm_aggressive_loss <- gbm_cv_results[which.min(gbm_cv_results$loss_aggressive), ]
-best_gbm_aggressive_loss
+best_gbm_aggressive_loss #250 trees, depth of 4, shrankge of 0.2
+#loss aggressive = 0.4320668
 best_gbm_aggressive_loss_n.trees <- best_gbm_aggressive_loss$n.trees
 best_gbm_aggressive_loss_interaction.depth <- best_gbm_aggressive_loss$interaction.depth
 best_gbm_aggressive_loss_shrinkage <- best_gbm_aggressive_loss$shrinkage
@@ -440,9 +449,11 @@ best_gbm_aggressive_loss_model <- gbm(NSP ~., data = fetal_train,
                                    shrinkage = best_gbm_aggressive_loss_shrinkage)
 
 confusionMatrix(get_gbm_labels(best_gbm_aggressive_loss_model, fetal_train, n.trees = best_gbm_aggressive_loss_n.trees), fetal_train$NSP) # train acc = 99.84%
+#only incorrectly classified one 'normal' as suspect
 
 confusionMatrix(get_gbm_labels(best_gbm_aggressive_loss_model, fetal_test, n.trees = best_gbm_aggressive_loss_n.trees), fetal_test$NSP) # test acc = 94.59%
+#class balanced accuracies 0.9279   0.9016  0.94029
 
-calculate_loss(fetal_train$NSP, get_gbm_labels(best_gbm_aggressive_loss_model, fetal_train, n.trees = best_gbm_aggressive_loss_n.trees), loss_aggressive) 
-calculate_loss(fetal_test$NSP, get_gbm_labels(best_gbm_aggressive_loss_model, fetal_test, n.trees = best_gbm_aggressive_loss_n.trees), loss_aggressive)
+calculate_loss(fetal_train$NSP, get_gbm_labels(best_gbm_aggressive_loss_model, fetal_train, n.trees = best_gbm_aggressive_loss_n.trees), loss_aggressive) #0.0005878895
+calculate_loss(fetal_test$NSP, get_gbm_labels(best_gbm_aggressive_loss_model, fetal_test, n.trees = best_gbm_aggressive_loss_n.trees), loss_aggressive) #0.3482353
 ```
