@@ -457,3 +457,21 @@ confusionMatrix(get_gbm_labels(best_gbm_aggressive_loss_model, fetal_test, n.tre
 calculate_loss(fetal_train$NSP, get_gbm_labels(best_gbm_aggressive_loss_model, fetal_train, n.trees = best_gbm_aggressive_loss_n.trees), loss_aggressive) #0.0005878895
 calculate_loss(fetal_test$NSP, get_gbm_labels(best_gbm_aggressive_loss_model, fetal_test, n.trees = best_gbm_aggressive_loss_n.trees), loss_aggressive) #0.3482353
 ```
+
+Variable importance
+top 4 most important variables:
+  1. ALTV
+  2. MSTV
+  3. ASTV
+  4. Mean
+
+```{r}
+png(filename = "relative.influence.plot.png", width = 7, height = 5, 
+    units = "in", res = 300)
+par(mar = c(5, 8, 4, 2))
+summary(best_gbm_aggressive_loss_model, las = 1, 
+        main = "Variable Importance: Best GBM (Aggressive Loss)")
+dev.off()
+#horizontal y axis labels
+```
+
