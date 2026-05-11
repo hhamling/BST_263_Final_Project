@@ -400,7 +400,7 @@ calculate_loss(fetal_test$NSP, predict(best_rf_aggressive_loss_model, fetal_test
 confusionMatrix(predict(best_rf_aggressive_loss_model, fetal_test), fetal_test$NSP)
 ```
 Best gbm model with aggressive loss:
-n.trees = 50
+n.trees = 500
 interaction.depth = 3
 shrinkage = 0.2
 test accuracy = 94.59%
