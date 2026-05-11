@@ -1,0 +1,250 @@
+---
+title: "probability.thresholds"
+author: "Bao Han Ngo"
+date: "2026-05-11"
+output: pdf_document
+---
+
+```{r}
+library(readxl)
+library(dplyr)
+library(tidyverse)
+fetal.dat <- read_excel("../Data/raw.fetal.data.xlsx")
+fetal.dat <- fetal.dat[-1,] #empty first row
+#each row is its own id
+#variables we'll actually use (including NSP)
+#removing date, id, filename, FEB, b, e, AC, DR, SUSP, class, and other classification variables not in our list
+fetal <- fetal.dat |> 
+  dplyr::select(-c("FileName","Date","SegFile","b", "e", "LBE", "AC", "DR", "A", 
+                   "B", "C", "D", "E", "AD","DE","LD","FS","SUSP","CLASS"))
+#make NSP a factor (only categorical variable in our selected features)
+fetal$NSP <- factor(fetal$NSP)
+
+#2 rows missing data on every variable: can remove
+#last row missing some variables, doesn't have a classification label
+fetal <- fetal[-c(2127,2128),]
+dim(fetal) #2127 people, 20 features, 1 outcome variable
+
+# drop the 1 observation with NA for NSP -> 2126 observations 
+fetal <- fetal |> drop_na(NSP) 
+```
+
+```{r}
+# row is true class, column is predicted class
+
+# all misclassifications are punished equally 
+loss_default <- matrix(c(0, 1, 1,
+                         1, 0, 1,
+                         1, 1, 0), nrow = 3, byrow = TRUE)
+
+# we can change these values, like idk is a false negative 4x as bad as a false positive 
+loss_mild <- matrix(c(0, 1, 1,
+                         3, 0, 1,
+                         4, 2, 0), nrow = 3, byrow = TRUE)
+
+loss_aggressive <- matrix(c(0, 1, 1,
+                         12, 0, 1,
+                         12, 3, 0), nrow = 3, byrow = TRUE)
+
+calculate_loss <- function(true_labels, predicted_labels, loss_matrix) {
+  true_labels <- as.numeric(as.character(true_labels))
+  predicted_labels <- as.numeric(as.character(predicted_labels))
+  mean(mapply(FUN = function(t, p) loss_matrix[t, p], true_labels, predicted_labels))
+}
+```
+
+```{r}
+library(caret)
+set.seed(263)
+
+#80/20 split
+train_indices <- createDataPartition(fetal$NSP, p = 0.8, list = FALSE)
+
+fetal_train <- fetal[train_indices, ]
+fetal_test  <- fetal[-train_indices, ]
+```
+
+# Custom Asymmetric Loss Analysis
+
+We have a classification problem with 3 classes of fetal state (1 = Normal, 2 = Suspect, 3 = Pathological). Classes 2 and 3 are underrepresented compared to class 1. Clinically, certain misclassifications are more harmful than others. 
+
+* Mistaking 3 as 1: Worst possible mistake 
+* Mistaking 2 as 1: Also a pretty bad mistake 
+* Mistaking 3 as 2: Bad, but not as bad as the previous two cases
+* Mistaking 2 as 3: not that bad
+* Mistaking 1 as 2: not that bad 
+* Mistaking 1 as 3: not that bad 
+
+Thus, we can define a custom loss that punishes certain mixups accordingly.
+
+```{r}
+# row is true class, column is predicted class
+
+# all misclassifications are punished equally 
+loss_default <- matrix(c(0, 1, 1,
+                         1, 0, 1,
+                         1, 1, 0), nrow = 3, byrow = TRUE)
+
+# we can change these values, like idk is a false negative 4x as bad as a false positive 
+#4 times as bad
+loss_mild <- matrix(c(0, 1, 1,
+                         3, 0, 1,
+                         4, 2, 0), nrow = 3, byrow = TRUE)
+
+#12 times as bad
+loss_aggressive <- matrix(c(0, 1, 1,
+                         12, 0, 1,
+                         12, 3, 0), nrow = 3, byrow = TRUE)
+
+calculate_loss <- function(true_labels, predicted_labels, loss_matrix) {
+  true_labels <- as.numeric(true_labels)
+  predicted_labels <- as.numeric(predicted_labels)
+  mean(mapply(FUN = function(t, p) loss_matrix[t, p], true_labels, predicted_labels))
+}
+```
+
+# CV to determine alternate probability thresholds
+
+Okay so our best model with the best class accuracies is the aggressive loss model GBM model with n.trees=250, interaction.depth=4, shrinkage=0.2 (see fetal.code). 
+
+Can we make it any better by adjusting the probability thresholds?
+
+We prioritize the class2 threshold since it is the hardest to get right, then class3, then class1.
+
+```{r warning = FALSE, message = FALSE}
+library(gbm)
+library(caret)
+get_gbm_labels_threshold <- function(gbm_model, dataset, n.trees = 100, class2_threshold, class3_threshold) {
+  probs <- predict.gbm(gbm_model, dataset, type = "response", n.trees = n.trees)[,,1]
+  labels <- rep(1, nrow(probs))
+  
+  # adjust class 2 probability first 
+  labels[probs[, 2] >= class2_threshold] <- 2
+  
+  # then class 3, if wasn't already assigned to class 2
+  labels[(probs[, 2] < class2_threshold) & probs[, 3] >= class3_threshold] <- 3
+  
+  return(as.factor(labels))
+  
+}
+
+set.seed(263)
+# 5 folds
+K <- 5 
+fold <- sample(1:K, nrow(fetal_train), replace = TRUE)
+  
+class2_thresholds <- c(0.1, 0.15, 0.2, 0.25, 0.3, 1/3)
+class3_thresholds <- c(0.1, 0.15, 0.2, 0.25, 0.3, 1/3)
+
+thresholds_results <- data.frame(threshold2 = c(), threshold3 = c(), loss_aggressive = c(), accuracy = c(),
+                                 sensitivity2 = c(), sensitivity3 = c(), weighted_avg_sensitivity23 = c())
+
+for(p2 in class2_thresholds) {
+  for (p3 in class3_thresholds) {
+    fold_loss_aggressive <- c()
+    fold_accuracy <- c()
+    fold_sensitivity2 <- c()
+    fold_sensitivity3 <- c()
+     for(k in 1:K) {
+        train <- fetal_train[fold != k, ]
+        val <- fetal_train[fold == k, ]
+        
+        gbm_model <- gbm(NSP ~ ., data = train, distribution = "multinomial",
+                         n.trees = 250, interaction.depth = 4, shrinkage = 0.2)
+        val_predicted_label <- get_gbm_labels_threshold(gbm_model, val, n.trees = 250, p2, p3)
+        fold_loss_aggressive[k] <- calculate_loss(val$NSP, val_predicted_label, loss_aggressive)
+        fold_accuracy[k] <- mean(as.numeric(val_predicted_label) == as.numeric(val$NSP))
+        fold_sensitivity2[k] <- mean(val_predicted_label[val$NSP == 2] == 2)
+        fold_sensitivity3[k] <- mean(val_predicted_label[val$NSP == 3] == 3)
+        
+     }
+    
+    thresholds_results <- thresholds_results |> rbind(data.frame(
+      threshold2 = p2,
+      threshold3 = p3, 
+      loss_aggressive = mean(fold_loss_aggressive),
+      accuracy = mean(fold_accuracy),
+      sensitivity2 = mean(fold_sensitivity2),
+      sensitivity3 = mean(fold_sensitivity3),
+      # sensitivity of class 2 twice as important than class 3 idk 
+      weighted_avg_sensitivity23 = ((2/3) * mean(fold_sensitivity2) + (1/3) * mean(fold_sensitivity3)))
+    )
+    
+  }
+}
+
+thresholds_results
+```
+
+# Best model to maximize class 2 sensitivity 
+
+```{r}
+thresholds_results[which.max(thresholds_results$sensitivity2), ] # threshold2 = 0.1, threshold3 = 0.2 maximizes class 2 sensitivity 
+
+set.seed(263)
+
+best_gbm_aggressive_loss_model <- gbm(NSP ~ ., data = fetal_train, distribution = "multinomial",
+                                      n.trees = 250, interaction.depth = 4, shrinkage = 0.2)
+
+train_labels_sensitivity2 <- get_gbm_labels_threshold(best_gbm_aggressive_loss_model, fetal_train, 250, 0.1, 0.2)
+test_labels_sensitivity2 <- get_gbm_labels_threshold(best_gbm_aggressive_loss_model, fetal_test, 250, 0.1, 0.2)
+
+confusionMatrix(train_labels_sensitivity2, fetal_train$NSP) # 99.71 train acc
+# train class sensitivities: 0.9962   1.0000  1.00000
+# train class balanced accuracies: 0.9981   0.9983  1.00000
+
+
+confusionMatrix(test_labels_sensitivity2, fetal_test$NSP) # 92.71 test acc x
+# test class sensitivities: 0.9366   0.9322  0.82857
+# test class balanced accuracies: 0.9364   0.9333  0.91300
+
+calculate_loss(fetal_train$NSP, train_labels_sensitivity2, loss_aggressive) # 0.002939447
+calculate_loss(fetal_test$NSP, test_labels_sensitivity2, loss_aggressive) # 0.2470588
+```
+
+
+
+# Best model to maximize avg of class 2 and class 3 sensitivity (weighted avg to prioritize 2), minimizes loss aggressive
+
+These thresholds minimized loss aggressive while also maximizing the weighted average of the sensitivities of 2 and 3 (senstivity 2 was weighted twice that of 3, chosen arbitrarily idk)
+
+```{r}
+thresholds_results[which.max(thresholds_results$weighted_avg_sensitivity23), ] # threshold2 = 0.15, threshold3 = 0.1 maximizes avg sensitivity of class 2/3 (weighted avg to place more weight on class 2)
+
+set.seed(263)
+
+train_labels_sensitivity23avg <- get_gbm_labels_threshold(best_gbm_aggressive_loss_model, fetal_train, 250, 0.15, 0.1)
+test_labels_sensitivity23avg <- get_gbm_labels_threshold(best_gbm_aggressive_loss_model, fetal_test, 250, 0.15, 0.1)
+
+confusionMatrix(train_labels_sensitivity23avg, fetal_train$NSP) # 99.88 train acc
+# train class sensitivities: 0.9985   1.0000  1.00000
+# train class balanced accuracies: 0.9992   0.9993  1.00000
+
+confusionMatrix(test_labels_sensitivity23avg, fetal_test$NSP) # 93.41 test acc
+# test class sensitivities: 0.9456   0.8983  0.88571
+# test class balanced accuracies: 0.9356   0.9232  0.94029, nice lol
+
+calculate_loss(fetal_train$NSP, train_labels_sensitivity23avg, loss_aggressive) #0.001175779
+calculate_loss(fetal_test$NSP, test_labels_sensitivity23avg, loss_aggressive) #0.2564706
+```
+
+# Default GBM probability thresholds 
+
+```{r}
+set.seed(263)
+
+train_labels_sensitivity23avg <- get_gbm_labels_threshold(best_gbm_aggressive_loss_model, fetal_train, 250, 1/3, 1/3)
+test_labels_sensitivity23avg <- get_gbm_labels_threshold(best_gbm_aggressive_loss_model, fetal_test, 250, 1/3, 1/3)
+
+confusionMatrix(train_labels_sensitivity23avg, fetal_train$NSP) # train acc 99.88
+# train class sensitivities: 0.9985   1.0000  1.00000
+# train class balanced accuracies: 0.9992   0.9993  1.00000
+
+confusionMatrix(test_labels_sensitivity23avg, fetal_test$NSP) # 94.35 test acc
+# test class sensitivities: 0.9668   0.8475  0.88571
+# test class balanced accuracies: 0.9302   0.9073  0.94029
+
+calculate_loss(fetal_train$NSP, train_labels_sensitivity23avg, loss_aggressive) #0.001175779
+calculate_loss(fetal_test$NSP, test_labels_sensitivity23avg, loss_aggressive) #0.3247059
+```
+Conclusions: Using default probability thresholds on the best GBM aggressive model increases the sensitivity of class 2 while only slightlyyyy decreasing sensitivity1 (which is an okay tradeoff since 1 is normal), no change to test sensitivity3. I think the best option is the threshold2 = 0.15, threshold3 = 0.1, which is the option that maximized the weighted average of sensivity2 and sensitivity3 (where senstivity2 was twice as important as sensitivity3, since 2 is the hardest class to get right), although this was arbitrarily chosen. This also minimized loss aggressive. Test sensitivies were (0.9668, 0.8475, 0.88571) using default thresholds and (0.9456, 0.8983, 0.88571) with threshold2 = 0.15, threshold3 = 0.1. This model also has very impressive balanced accuracies: (0.9356, 0.9232, 0.94029), which is an increase of (0.0054, 0.0159, 0) compared to the test balanced accuracies in the defaukkt threshold best aggressive GBM model. 
