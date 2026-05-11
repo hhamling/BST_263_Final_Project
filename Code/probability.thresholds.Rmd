@@ -105,7 +105,14 @@ calculate_loss <- function(true_labels, predicted_labels, loss_matrix) {
 
 # CV to determine alternate probability thresholds
 
-Okay so our best model with the best class accuracies is the aggressive loss model GBM model with n.trees=250, interaction.depth=4, shrinkage=0.2 (see fetal.code). 
+Okay so our best model with the best class accuracies is the aggressive loss model GBM model with n.trees=250, interaction.depth=4, shrinkage=0.2 (see fetal.code, this does not use SMOTE). This model outperforms the best GBM model with SMOTE. 
+
+For reference, performance on unseen test data from the non-SMOTE best GBM vs SMOTE best GBM 
+
+* non-SMOTE sensitivities: (0.9728, 0.8305, 0.88571) vs SMOTE sensitivities: (0.9819, 0.7627, 0.91429)
+* non-SMOTE balanced accuracies (0.9279, 0.9016  0.94029) vs SMOTE balanced accuracies: (0.9218, 0.8718, 0.95330)
+* non-SMOTE test aggressive loss: 0.3482353 vs SMOTE test aggressive loss: 0.4
+
 
 Can we make it any better by adjusting the probability thresholds?
 
@@ -178,6 +185,8 @@ thresholds_results
 
 # Best model to maximize class 2 sensitivity 
 
+Okay while its nice to maximize class 2 sensitivity, it comes at the cost of class 3 sensitivity so this is not a good metric to pick the best thresholds by. 
+
 ```{r}
 thresholds_results[which.max(thresholds_results$sensitivity2), ] # threshold2 = 0.1, threshold3 = 0.2 maximizes class 2 sensitivity 
 
@@ -204,28 +213,28 @@ calculate_loss(fetal_test$NSP, test_labels_sensitivity2, loss_aggressive) # 0.24
 
 
 
-# Best model to maximize avg of class 2 and class 3 sensitivity (weighted avg to prioritize 2), minimizes loss aggressive
+# Best model to minimizes loss aggressive
 
-These thresholds minimized loss aggressive while also maximizing the weighted average of the sensitivities of 2 and 3 (senstivity 2 was weighted twice that of 3, chosen arbitrarily idk)
+Minimzing loss balances good sensitivities in class 2 and 3. 
 
 ```{r}
-thresholds_results[which.max(thresholds_results$weighted_avg_sensitivity23), ] # threshold2 = 0.15, threshold3 = 0.1 maximizes avg sensitivity of class 2/3 (weighted avg to place more weight on class 2)
+thresholds_results[which.max(thresholds_results$loss_aggressive), ] # threshold2 = 0.15, threshold3 = 0.1, minimizes aggressive loss
 
 set.seed(263)
 
-train_labels_sensitivity23avg <- get_gbm_labels_threshold(best_gbm_aggressive_loss_model, fetal_train, 250, 0.15, 0.1)
-test_labels_sensitivity23avg <- get_gbm_labels_threshold(best_gbm_aggressive_loss_model, fetal_test, 250, 0.15, 0.1)
+train_labels_threshold_loss <- get_gbm_labels_threshold(best_gbm_aggressive_loss_model, fetal_train, 250, 0.15, 0.1)
+test_labels_threshold_loss <- get_gbm_labels_threshold(best_gbm_aggressive_loss_model, fetal_test, 250, 0.15, 0.1)
 
-confusionMatrix(train_labels_sensitivity23avg, fetal_train$NSP) # 99.88 train acc
+confusionMatrix(train_labels_threshold_loss, fetal_train$NSP) # 99.88 train acc
 # train class sensitivities: 0.9985   1.0000  1.00000
 # train class balanced accuracies: 0.9992   0.9993  1.00000
 
-confusionMatrix(test_labels_sensitivity23avg, fetal_test$NSP) # 93.41 test acc
+confusionMatrix(test_labels_threshold_loss, fetal_test$NSP) # 93.41 test acc
 # test class sensitivities: 0.9456   0.8983  0.88571
 # test class balanced accuracies: 0.9356   0.9232  0.94029, nice lol
 
-calculate_loss(fetal_train$NSP, train_labels_sensitivity23avg, loss_aggressive) #0.001175779
-calculate_loss(fetal_test$NSP, test_labels_sensitivity23avg, loss_aggressive) #0.2564706
+calculate_loss(fetal_train$NSP, train_labels_threshold_loss, loss_aggressive) #0.001175779
+calculate_loss(fetal_test$NSP, test_labels_threshold_loss, loss_aggressive) #0.2564706
 ```
 
 # Default GBM probability thresholds 
