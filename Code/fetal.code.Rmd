@@ -43,15 +43,28 @@ summary(fetal$NSP)
 fetal <- fetal |> drop_na(NSP) 
 
 #1655 are normal, 295 are suspect, 176 are pathologic
-plot(fetal$NSP, main = "Fetal Heart Rate Levels", sub = "Figure 1")
+plot(fetal$NSP, main = "Figure 1: Fetal State Classes")
+
+barplot(
+  table(fetal$NSP),
+  main   = "Figure 1: Fetal State Classes",
+  names.arg = c("Normal", "Suspect", "Pathological"),
+  xlab   = "Fetal Class",
+  ylab   = "Frequency"
+)
 
 #install.packages("flextable")
 library(flextable)
 library(dplyr)
 as.data.frame(prop.table(table(fetal$NSP))) |>
-  rename("NSP Level" = Var1, "Proportion" = Freq) |>
+  rename("Fetal Class" = Var1, "Proportion" = Freq) |>
+  mutate(`Fetal Class` = recode(`Fetal Class`,
+    "1" = "Normal",
+    "2" = "Suspect",
+    "3" = "Pathological"
+  )) |>
   flextable() |>
-  set_caption("Figure 2: Proportions of Fetal Heart Rate Levels")
+  set_caption("Table 1: Proportions of Fetal State Classes")
 ```
 
 ```{r}
