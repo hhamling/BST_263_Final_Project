@@ -479,12 +479,25 @@ top 4 most important variables:
   4. Mean
 
 ```{r}
+summary(best_gbm_aggressive_loss_model) |>
+  as.data.frame() |>
+  rename("Variable" = var, "Relative Influence" = rel.inf) |>
+  mutate(`Relative Influence` = round(`Relative Influence`, 5)) |>
+  flextable() |>
+  set_caption("Table 3: Variable Importance")
+
 png(filename = "relative.influence.plot.png", width = 7, height = 5, 
     units = "in", res = 300)
 par(mar = c(5, 8, 4, 2))
-summary(best_gbm_aggressive_loss_model, las = 1, 
-        main = "Variable Importance: Best GBM (Aggressive Loss)")
+var_importance <- summary(best_gbm_aggressive_loss_model, plotit = FALSE)
+#putting rel infl just on the plot itself instead of a separate table
+barplot(var_imp$rel.inf[nrow(var_imp):1], 
+        names.arg = var_imp$var[nrow(var_imp):1], horiz = TRUE, las = 1,
+        main = "Figure 1: Variable Importance, Best GBM (Aggressive Loss)",
+        xlab = "Relative Influence", xlim = c(0, max(var_imp$rel.inf) * 1.2), 
+        col = 'blue') -> bar_coordinates
+text(x = var_imp$rel.inf[nrow(var_imp):1], y = bar_coordinates,
+  labels = round(var_imp$rel.inf[nrow(var_imp):1], 3), pos = 4, cex = 0.8)
 dev.off()
-#horizontal y axis labels
 ```
 
